@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>课时总表（可编辑）</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Microsoft YaHei", sans-serif;
+    margin: 0; padding: 20px;
+    background: #f5f6f8; color: #222;
+  }
+  h1 { font-size: 20px; margin: 0 0 16px; }
+  .toolbar {
+    display: flex; flex-wrap: wrap; gap: 12px;
+    align-items: center; margin-bottom: 16px;
+    background: #fff; padding: 12px 16px; border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.08);
+  }
+  .toolbar label { font-size: 14px; }
+  .toolbar .range-label { font-size: 14px; color: #555; }
+  select, button, input[type="date"] {
+    font-size: 14px; padding: 6px 10px;
+    border: 1px solid #ccc; border-radius: 6px; background: #fff;
+    cursor: pointer;
+  }
+  /* 让整个日期框可点弹日历 */
+  input[type="date"] {
+    position: relative;
+  }
+  input[type="date"]::-webkit-calendar-picker-indicator {
+    position: absolute;
+    left: 0; top: 0;
+    width: 100%; height: 100%;
+    margin: 0; padding: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+  button.primary { background: #2563eb; color: #fff; border-color: #2563eb; }
+  button.danger { background: #fff; color: #dc2626; border-color: #f0a0a0; }
+  button.ghost { background: #fff; color: #555; }
+  .table-wrap {
+    overflow: auto; background: #fff; border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.08);
+    max-height: 70vh;
+  }
+  table { border-collapse: collapse; font-size: 13px; white-space: nowrap; }
+  th, td {
+    border: 1px solid #e2e5ea; padding: 4px 6px; text-align: center;
+    min-width: 44px;
+  }
+  thead th { background: #f0f3f7; position: sticky; top: 0; z-index: 2; }
+  .col-date { position: sticky; left: 0; background: #fafbfc; z-index: 1; }
+  thead .col-date { z-index: 3; }
+  .col-period { position: sticky; left: 0; background: #fafbfc; z-index: 1; min-width: 52px; }
+  thead .col-period { z-index: 3; }
+  .col-section { position: sticky; left: 52px; background: #fafbfc; z-index: 1; min-width: 80px; }
+  thead .col-section { z-index: 3; }
+  .weekend { background: #f7f8fa; }
+  .holiday { background: #fdecec; }
+  .makeup { background: #fff7e0; }
+  .today { outline: 2px solid #2563eb; outline-offset: -2px; }
+  .month-sep { border-left: 2px solid #c0c6cf; }
+  .cell-class { font-weight: 600; color: #1d4ed8; }
+  .cell-morning { color: #b45309; }
+
+  td.editable { cursor: pointer; }
+  td.editable:hover { background: #eef4ff; }
+  td.manual {
+    background: #e8f5e9 !important;
+    position: relative;
+  }
+  td.manual::after {
+    content: '改';
+    position: absolute; top: 0; right: 0;
+    font-size: 9px; line-height: 1;
+    background: #34a853; color: #fff;
+    padding: 1px 2px; border-radius: 0 0 0 4px;
+  }
+  .row-sum td { font-weight: 600; background: #f7f9fc; }
+  .row-note td { font-size: 12px; color: #666; background: #fcfcfd; }
+  .row-note td.editable { cursor: pointer; }
+  .row-note td.editable:hover { background: #eef4ff; }
+  .legend { margin-top: 12px; font-size: 13px; color: #555; display: flex; gap: 16px; flex-wrap: wrap; }
+  .legend span::before {
+    content: ''; display: inline-block; width: 12px; height: 12px;
+    border-radius: 3px; margin-right: 4px; vertical-align: -2px;
+  }
+  .legend .l-holiday::before { background: #fdecec; border: 1px solid #f5c2c2; }
+  .legend .l-makeup::before { background: #fff7e0; border: 1px solid #f0d48a; }
+  .legend .l-weekend::before { background: #f7f8fa; border: 1px solid #e2e5ea; }
+  .legend .l-manual::before { background: #e8f5e9; border: 1px solid #a5d6a7; }
+  .storage-tip { font-size: 12px; color: #999; margin-top: 8px; }
+
+  .summary-area {
+    margin-top: 16px; display: flex; gap: 16px; flex-wrap: wrap;
+  }
+  .summary-card {
+    background: #fff; border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.08); padding: 16px;
+    flex: 1; min-width: 300px;
+  }
+  .summary-card h2 { font-size: 15px; margin: 0 0 12px; }
+  .summary-card table { font-size: 13px; width: 100%; }
+  .summary-card th, .summary-card td { min-width: 60px; padding: 6px 10px; }
+  .summary-card thead th { background: #f0f3f7; }
+  .summary-card .total-row td { font-weight: 700; background: #f7f9fc; }
+  .summary-card .money { color: #b45309; font-weight: 600; }
+  .summary-card .grand-total td { font-weight: 700; background: #fff7e0; font-size: 14px; }
+
+  .popup {
+    position: absolute; z-index: 1000;
+    background: #fff; border: 1px solid #d0d5dd;
+    border-radius: 8px; box-shadow: 0 6px 24px rgba(0,0,0,.18);
+    padding: 10px; width: 220px;
+    display: none;
+  }
+  .popup.show { display: block; }
+  .popup .popup-title {
+    font-size: 12px; color: #8a6d00; background: #fffbe6;
+    border: 1px solid #f0c040; border-radius: 4px;
+    padding: 3px 6px; margin-bottom: 8px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .popup input {
+    width: 100%; font-size: 14px; padding: 6px 8px;
+    border: 1px solid #ccc; border-radius: 4px; margin-bottom: 8px;
+  }
+  .popup .popup-btns {
+    display: flex; gap: 6px; justify-content: flex-end;
+  }
+  .popup .popup-btns button {
+    padding: 4px 12px; font-size: 13px;
+  }
+</style>
+</head>
+<body>
+
+<h1>姜越 · 高二英语 · 课时总表（2026年9–12月）</h1>
+
+<div class="toolbar">
+  <label>快速跳到：
+    <select id="monthJump"></select>
+  </label>
+  <span class="range-label">范围：</span>
+  <input type="date" id="rangeStart">
+  <span style="color:#999;">～</span>
+  <input type="date" id="rangeEnd">
+  <button class="ghost" id="rangeReset">重置为全月</button>
+  <button class="primary" id="exportBtn">导出 CSV</button>
+  <button class="danger" id="resetBtn">重置范围内调课</button>
+  <button id="saveJsonBtn">导出数据</button>
+  <button id="loadJsonBtn">导入数据</button>
+  <input id="loadJsonFile" type="file" accept=".json" style="display:none;">
+  <span id="summary" style="font-size:13px;color:#666;"></span>
+</div>
+<div class="storage-tip" id="storageTip"></div>
+
+<div class="table-wrap" id="tableWrap">
+  <table id="timetable"></table>
+</div>
+
+<div class="summary-area" id="summaryArea"></div>
+
+<div class="legend">
+  <span class="l-holiday">节假日（不计课时）</span>
+  <span class="l-makeup">调休日（按周一排课）</span>
+  <span class="l-weekend">周末无课</span>
+  <span class="l-manual">手动调课/备注（点击可改）</span>
+</div>
+
+<div class="popup" id="popup">
+  <div class="popup-title" id="popupTitle"></div>
+  <input id="popupInput" type="text" autocomplete="off">
+  <div class="popup-btns">
+    <button id="popupCancel" type="button">取消</button>
+    <button class="primary" id="popupOk" type="button">确定</button>
+  </div>
+</div>
+
+<script>
+/* ===================== 1. 单价 ===================== */
+const PRICE = {
+  morning: 15,
+  regular: 45,
+  evening: 30
+};
+
+/* ===================== 2. 基准课表规律 ===================== */
+const BASE_MORNING = {
+  2: '18',
+  3: '16',
+  4: '17',
+  5: '18'
+};
+
+const BASE_SCHEDULE = {
+  1: { 1:'17', 2:'16', 3:'18', 9:'18' },
+  2: { 1:'18', 2:'17', 4:'16', 9:'17' },
+  3: { 1:'16', 2:'18', 3:'17', 6:'18' },
+  4: { 2:'16', 4:'18', 5:'17', 9:'16' },
+  5: { 1:'18', 2:'17', 3:'16', 6:'16', 8:'17' },
+  6: {},
+  7: {}
+};
+
+let MORNING = Object.assign({}, BASE_MORNING);
+let SCHEDULE = JSON.parse(JSON.stringify(BASE_SCHEDULE));
+
+/* ===================== 3. 特殊日期规则 ===================== */
+const BASE_SPECIAL = {
+  '2026-09-20': { type:'makeup', asWeekday:1, label:'调休按周一' },
+  '2026-10-10': { type:'makeup', asWeekday:1, label:'调休按周一' },
+  '2026-09-25': { type:'holiday', label:'中秋假' },
+  '2026-09-26': { type:'holiday', label:'中秋假' },
+  '2026-09-27': { type:'holiday', label:'中秋假' },
+  '2026-10-01': { type:'holiday', label:'国庆假' },
+  '2026-10-02': { type:'holiday', label:'国庆假' },
+  '2026-10-03': { type:'holiday', label:'国庆假' },
+  '2026-10-04': { type:'holiday', label:'国庆假' },
+  '2026-10-05': { type:'holiday', label:'国庆假' },
+  '2026-10-06': { type:'holiday', label:'国庆假' },
+  '2026-10-07': { type:'holiday', label:'国庆假' }
+};
+
+let SPECIAL = JSON.parse(JSON.stringify(BASE_SPECIAL));
+
+let MANUAL = {};
+let MANUAL_NOTE = {};
+
+/* ===================== 4. 本地存储 ===================== */
+const STORAGE_KEY = 'timetable_data_v10';
+
+let storageType = 'none';
+
+function detectStorage() {
+  try {
+    const k = '__test__';
+    window.localStorage.setItem(k, '1');
+    window.localStorage.removeItem(k);
+    storageType = 'local';
+    return;
+  } catch (e) {}
+  try {
+    const k = '__test__';
+    window.sessionStorage.setItem(k, '1');
+    window.sessionStorage.removeItem(k);
+    storageType = 'session';
+    return;
+  } catch (e) {}
+  storageType = 'none';
+}
+
+function getStorage() {
+  if (storageType === 'local') return window.localStorage;
+  if (storageType === 'session') return window.sessionStorage;
+  return null;
+}
+
+function saveData() {
+  const s = getStorage();
+  if (!s) return;
+  try {
+    s.setItem(STORAGE_KEY, JSON.stringify({
+      morning: MORNING,
+      schedule: SCHEDULE,
+      special: SPECIAL,
+      manual: MANUAL,
+      manualNote: MANUAL_NOTE
+    }));
+  } catch (e) { console.warn('保存失败', e); }
+}
+
+function loadData() {
+  const s = getStorage();
+  if (!s) return;
+  try {
+    const raw = s.getItem(STORAGE_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (data.morning) MORNING = data.morning;
+    if (data.schedule) SCHEDULE = data.schedule;
+    if (data.special) SPECIAL = data.special;
+    if (data.manual) MANUAL = data.manual;
+    if (data.manualNote) MANUAL_NOTE = data.manualNote;
+  } catch (e) { console.warn('读取本地数据失败', e); }
+}
+
+/* ===================== 5. 节次定义 ===================== */
+const PERIODS = [
+  { group:'早读', name:'早读', key:100, type:'morning', base:100 },
+  { group:'上午', name:'第1节', key:1, type:'regular', base:1 },
+  { group:'上午', name:'第2节', key:2, type:'regular', base:2 },
+  { group:'上午', name:'第3节', key:3, type:'regular', base:3 },
+  { group:'上午', name:'第4节', key:4, type:'regular', base:4 },
+  { group:'下午', name:'第5节', key:5, type:'regular', base:5 },
+  { group:'下午', name:'第6节', key:6, type:'regular', base:6 },
+  { group:'下午', name:'第7节', key:7, type:'regular', base:7 },
+  { group:'下午', name:'第8节', key:8, type:'regular', base:8 },
+  { group:'晚自习', name:'晚自习第1节', key:9,  type:'evening', base:9 },
+  { group:'晚自习', name:'晚自习第2节', key:10, type:'evening', base:9 }
+];
+
+/* ===================== 6. 工具函数 ===================== */
+const pad = n => String(n).padStart(2, '0');
+const dateKey = (y, m, d) => `${y}-${pad(m)}-${pad(d)}`;
+
+function effectiveWeekday(y, m, d) {
+  const key = dateKey(y, m, d);
+  const rule = SPECIAL[key];
+  if (rule) {
+    if (rule.type === 'holiday') return null;
+    if (rule.type === 'makeup') return rule.asWeekday;
+  }
+  const wd = new Date(y, m - 1, d).getDay();
+  return wd === 0 ? 7 : wd;
+}
+
+function isHoliday(y, m, d) {
+  const rule = SPECIAL[dateKey(y, m, d)];
+  return rule && rule.type === 'holiday';
+}
+function isMakeup(y, m, d) {
+  const rule = SPECIAL[dateKey(y, m, d)];
+  return rule && rule.type === 'makeup';
+}
+
+function getClass(y, m, d, periodKey) {
+  if (isHoliday(y, m, d)) return '';
+  const key = dateKey(y, m, d);
+  if (MANUAL[key] && periodKey in MANUAL[key]) {
+    return MANUAL[key][periodKey];
+  }
+  const wd = effectiveWeekday(y, m, d);
+  if (!wd) return '';
+  if (periodKey === 100) return MORNING[wd] || '';
+  if (periodKey === 10) {
+    if (MANUAL[key] && 9 in MANUAL[key]) return MANUAL[key][9];
+    return (SCHEDULE[wd] || {})[9] || '';
+  }
+  const day = SCHEDULE[wd] || {};
+  return day[periodKey] || '';
+}
+
+function isManual(y, m, d, periodKey) {
+  const key = dateKey(y, m, d);
+  return !!(MANUAL[key] && periodKey in MANUAL[key]);
+}
+
+function getNote(y, m, d) {
+  const key = dateKey(y, m, d);
+  if (key in MANUAL_NOTE) return MANUAL_NOTE[key];
+  const rule = SPECIAL[key];
+  return rule ? (rule.label || '') : '';
+}
+
+function isManualNote(y, m, d) {
+  return dateKey(y, m, d) in MANUAL_NOTE;
+}
+
+/* ===================== 7. 日期范围 ===================== */
+function getDateRange() {
+  const startVal = document.getElementById('rangeStart').value;
+  const endVal = document.getElementById('rangeEnd').value;
+  if (!startVal || !endVal) return [];
+  const [sy, sm, sd] = startVal.split('-').map(Number);
+  const [ey, em, ed] = endVal.split('-').map(Number);
+  const start = new Date(sy, sm - 1, sd);
+  const end = new Date(ey, em - 1, ed);
+  if (start > end) return [];
+  const days = [];
+  const cur = new Date(start);
+  let guard = 0;
+  while (cur <= end && guard < 400) {
+    days.push({ y: cur.getFullYear(), m: cur.getMonth() + 1, d: cur.getDate() });
+    cur.setDate(cur.getDate() + 1);
+    guard++;
+  }
+  return days;
+}
+
+/* ===================== 8. 渲染 ===================== */
+let editingCell = null;
+
+function render() {
+  const days = getDateRange();
+  const table = document.getElementById('timetable');
+
+  if (days.length === 0) {
+    table.innerHTML = '<thead><tr><th>无数据（请检查日期范围）</th></tr></thead>';
+    document.getElementById('summaryArea').innerHTML = '';
+    document.getElementById('summary').textContent = '筛选范围内没有日期';
+    return;
+  }
+
+  const today = new Date();
+
+  let html = '<thead><tr>';
+  html += '<th class="col-date" rowspan="2">时段</th>';
+  html += '<th class="col-period" rowspan="2">节次</th>';
+  let lastMonth = null;
+  for (const { y, m, d } of days) {
+    const hol = isHoliday(y, m, d);
+    const mk = isMakeup(y, m, d);
+    const cls = hol ? 'holiday' : (mk ? 'makeup' : '');
+    const isToday = (today.getFullYear() === y && today.getMonth() + 1 === m && today.getDate() === d);
+    const todayCls = isToday ? ' today' : '';
+    const sepCls = (lastMonth !== null && lastMonth !== m) ? ' month-sep' : '';
+    lastMonth = m;
+    html += `<th class="${cls}${todayCls}${sepCls}">${m}月${d}日</th>`;
+  }
+  html += '</tr><tr>';
+
+  const wdNames = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+  lastMonth = null;
+  for (const { y, m, d } of days) {
+    const hol = isHoliday(y, m, d);
+    const mk = isMakeup(y, m, d);
+    let cls = hol ? 'holiday' : (mk ? 'makeup' : '');
+    let name;
+    if (hol) { name = '假'; }
+    else {
+      const wd = effectiveWeekday(y, m, d);
+      name = wdNames[wd];
+      if (mk) name = wdNames[wd] + '(调)';
+      if (wd >= 6 && !mk) cls = 'weekend';
+    }
+    const isToday = (today.getFullYear() === y && today.getMonth() + 1 === m && today.getDate() === d);
+    const todayCls = isToday ? ' today' : '';
+    const sepCls = (lastMonth !== null && lastMonth !== m) ? ' month-sep' : '';
+    lastMonth = m;
+    html += `<th class="${cls}${todayCls}${sepCls}">${name}</th>`;
+  }
+  html += '</tr></thead><tbody>';
+
+  PERIODS.forEach((p, idx) => {
+    html += '<tr>';
+    const isFirstOfGroup = idx === 0 || PERIODS[idx - 1].group !== p.group;
+    if (isFirstOfGroup) {
+      const groupCount = PERIODS.filter(x => x.group === p.group).length;
+      html += `<td class="col-date" rowspan="${groupCount}">${p.group}</td>`;
+    }
+    html += `<td class="col-section">${p.name}</td>`;
+    lastMonth = null;
+    for (const { y, m, d } of days) {
+      const hol = isHoliday(y, m, d);
+      const mk = isMakeup(y, m, d);
+      const wd = effectiveWeekday(y, m, d);
+      let cls = hol ? 'holiday' : (mk ? 'makeup' : (wd >= 6 ? 'weekend' : ''));
+      const val = getClass(y, m, d, p.key);
+      const isToday = (today.getFullYear() === y && today.getMonth() + 1 === m && today.getDate() === d);
+      const todayCls = isToday ? ' today' : '';
+      const manualCls = isManual(y, m, d, p.key) ? ' manual' : '';
+      const editable = (!hol && wd) ? ' editable' : '';
+      const typeCls = (p.type === 'morning' && val) ? ' cell-morning' : ' cell-class';
+      const sepCls = (lastMonth !== null && lastMonth !== m) ? ' month-sep' : '';
+      lastMonth = m;
+      const dataAttrs = ` data-date="${dateKey(y, m, d)}" data-period="${p.key}"`;
+      html += `<td class="${cls}${todayCls}${manualCls}${sepCls}${editable} ${val ? typeCls : ''}"${editable ? dataAttrs : ''}>${val}</td>`;
+    }
+    html += '</tr>';
+  });
+
+  html += '<tr class="row-sum"><td class="col-date">合计</td><td class="col-section">节数</td>';
+  lastMonth = null;
+  for (const { y, m, d } of days) {
+    const hol = isHoliday(y, m, d);
+    const mk = isMakeup(y, m, d);
+    const wd = effectiveWeekday(y, m, d);
+    let cls = hol ? 'holiday' : (mk ? 'makeup' : (wd >= 6 ? 'weekend' : ''));
+    let count = 0;
+    if (!hol) PERIODS.forEach(p => { if (getClass(y, m, d, p.key)) count++; });
+    const isToday = (today.getFullYear() === y && today.getMonth() + 1 === m && today.getDate() === d);
+    const todayCls = isToday ? ' today' : '';
+    const sepCls = (lastMonth !== null && lastMonth !== m) ? ' month-sep' : '';
+    lastMonth = m;
+    html += `<td class="${cls}${todayCls}${sepCls}">${hol ? '' : count}</td>`;
+  }
+  html += '</tr>';
+
+  html += '<tr class="row-note"><td class="col-date">备注</td><td class="col-section"></td>';
+  lastMonth = null;
+  for (const { y, m, d } of days) {
+    const hol = isHoliday(y, m, d);
+    const mk = isMakeup(y, m, d);
+    const wd = effectiveWeekday(y, m, d);
+    let cls = hol ? 'holiday' : (mk ? 'makeup' : (wd >= 6 ? 'weekend' : ''));
+    const note = getNote(y, m, d);
+    const isToday = (today.getFullYear() === y && today.getMonth() + 1 === m && today.getDate() === d);
+    const todayCls = isToday ? ' today' : '';
+    const manualCls = isManualNote(y, m, d) ? ' manual' : '';
+    const sepCls = (lastMonth !== null && lastMonth !== m) ? ' month-sep' : '';
+    lastMonth = m;
+    const dataAttrs = ` data-date="${dateKey(y, m, d)}" data-period="0"`;
+    html += `<td class="${cls}${todayCls}${manualCls}${sepCls} editable"${dataAttrs}>${note}</td>`;
+  }
+  html += '</tr></tbody>';
+  table.innerHTML = html;
+
+  table.querySelectorAll('td.editable').forEach(td => {
+    td.onclick = function (e) { e.stopPropagation(); openPopup(this); };
+  });
+
+  renderSummary(days);
+}
+
+/* ===================== 9. 汇总 ===================== */
+function computeSummary(days) {
+  const byType = {
+    morning: { count: 0, price: PRICE.morning, subtotal: 0 },
+    regular: { count: 0, price: PRICE.regular, subtotal: 0 },
+    evening: { count: 0, price: PRICE.evening, subtotal: 0 }
+  };
+  const byClass = {};
+  let classDays = 0;
+
+  for (const { y, m, d } of days) {
+    if (isHoliday(y, m, d)) continue;
+    let hasClass = false;
+    PERIODS.forEach(p => {
+      const cls = getClass(y, m, d, p.key);
+      if (!cls) return;
+      hasClass = true;
+      byType[p.type].count++;
+      if (!byClass[cls]) byClass[cls] = { morning: 0, regular: 0, evening: 0, total: 0 };
+      byClass[cls][p.type]++;
+      byClass[cls].total++;
+    });
+    if (hasClass) classDays++;
+  }
+  byType.morning.subtotal = byType.morning.count * byType.morning.price;
+  byType.regular.subtotal = byType.regular.count * byType.regular.price;
+  byType.evening.subtotal = byType.evening.count * byType.evening.price;
+  const grandTotal = byType.morning.subtotal + byType.regular.subtotal + byType.evening.subtotal;
+
+  return { byType, byClass, classDays, grandTotal };
+}
+
+function renderSummary(days) {
+  const { byType, byClass, classDays, grandTotal } = computeSummary(days);
+
+  let rangeText = '';
+  if (days.length > 0) {
+    const s = days[0], e = days[days.length - 1];
+    rangeText = `（${s.m}月${s.d}日 ~ ${e.m}月${e.d}日）`;
+  }
+
+  let html = '<div class="summary-card">';
+  html += `<h2>课时费汇总${rangeText}</h2>`;
+  html += '<table><thead><tr>';
+  html += '<th>时段</th><th>节数</th><th>单价（元）</th><th>小计（元）</th>';
+  html += '</tr></thead><tbody>';
+  html += `<tr><td>早读</td><td>${byType.morning.count}</td><td>${byType.morning.price}</td><td class="money">${byType.morning.subtotal}</td></tr>`;
+  html += `<tr><td>正课</td><td>${byType.regular.count}</td><td>${byType.regular.price}</td><td class="money">${byType.regular.subtotal}</td></tr>`;
+  html += `<tr><td>晚自习</td><td>${byType.evening.count}</td><td>${byType.evening.price}</td><td class="money">${byType.evening.subtotal}</td></tr>`;
+  html += `<tr class="grand-total"><td>合计</td><td>${byType.morning.count + byType.regular.count + byType.evening.count}</td><td>—</td><td class="money">${grandTotal}</td></tr>`;
+  html += '</tbody></table>';
+  html += `<div style="margin-top:8px; font-size:13px; color:#666;">有课天数：${classDays} 天</div>`;
+  html += '</div>';
+
+  const classNames = Object.keys(byClass).sort((a, b) => {
+    const na = parseInt(a, 10), nb = parseInt(b, 10);
+    return (!isNaN(na) && !isNaN(nb)) ? na - nb : a.localeCompare(b);
+  });
+
+  html += '<div class="summary-card">';
+  html += `<h2>课时费汇总（按班级）</h2>`;
+  html += '<table><thead><tr>';
+  html += '<th>班级</th><th>早读</th><th>正课</th><th>晚自习</th><th>合计节数</th>';
+  html += '</tr></thead><tbody>';
+  let tM = 0, tR = 0, tE = 0, tT = 0;
+  classNames.forEach(cls => {
+    const c = byClass[cls];
+    tM += c.morning; tR += c.regular; tE += c.evening; tT += c.total;
+    html += `<tr><td>${cls} 班</td><td>${c.morning}</td><td>${c.regular}</td><td>${c.evening}</td><td>${c.total}</td></tr>`;
+  });
+  html += `<tr class="total-row"><td>合计</td><td>${tM}</td><td>${tR}</td><td>${tE}</td><td>${tT}</td></tr>`;
+  html += '</tbody></table>';
+  html += '</div>';
+
+  document.getElementById('summaryArea').innerHTML = html;
+
+  const totalPeriods = byType.morning.count + byType.regular.count + byType.evening.count;
+  document.getElementById('summary').textContent =
+    `共 ${totalPeriods} 节课，合计 ${grandTotal} 元`;
+}
+
+/* ===================== 10. 就近弹窗 ===================== */
+const popupEl = document.getElementById('popup');
+const popupTitle = document.getElementById('popupTitle');
+const popupInput = document.getElementById('popupInput');
+
+function openPopup(td) {
+  editingCell = td;
+  const dateStr = td.dataset.date;
+  const period = +td.dataset.period;
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const periodName = (period === 0) ? '备注'
+    : (period === 100 ? '早读' : PERIODS.find(p => p.key === period).name);
+  const wdNames = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+  const wd = effectiveWeekday(y, m, d);
+
+  popupTitle.textContent = `${m}月${d}日（${wdNames[wd]}）· ${periodName}`;
+  popupInput.value = (period === 0) ? getNote(y, m, d) : getClass(y, m, d, period);
+  popupInput.placeholder = (period === 0) ? '备注，留空=清除' : '班级，留空=取消';
+
+  popupEl.classList.add('show');
+  positionPopup(td);
+  setTimeout(() => { popupInput.focus(); popupInput.select(); }, 0);
+}
+
+function positionPopup(td) {
+  const rect = td.getBoundingClientRect();
+  const popupW = 220;
+  const popupH = popupEl.offsetHeight || 110;
+  const scrollX = window.pageXOffset || document.documentElement.scrollLeft;
+  const scrollY = window.pageYOffset || document.documentElement.scrollTop;
+
+  let left = rect.left + scrollX;
+  if (left + popupW > scrollX + document.documentElement.clientWidth - 8) {
+    left = rect.right + scrollX - popupW;
+  }
+  if (left < scrollX + 8) left = scrollX + 8;
+
+  let top = rect.bottom + scrollY + 4;
+  if (rect.bottom + popupH > document.documentElement.clientHeight - 8) {
+    top = rect.top + scrollY - popupH - 4;
+  }
+  if (top < scrollY + 8) top = scrollY + 8;
+
+  popupEl.style.left = left + 'px';
+  popupEl.style.top = top + 'px';
+}
+
+function closePopup() {
+  popupEl.classList.remove('show');
+  editingCell = null;
+}
+
+function confirmEdit() {
+  if (!editingCell) { closePopup(); return; }
+  const dateStr = editingCell.dataset.date;
+  const period = +editingCell.dataset.period;
+  if (!dateStr) { closePopup(); return; }
+
+  const newVal = popupInput.value.trim();
+
+  if (period === 0) {
+    const baseNote = (SPECIAL[dateStr] && SPECIAL[dateStr].label) || '';
+    if (newVal === baseNote) delete MANUAL_NOTE[dateStr];
+    else MANUAL_NOTE[dateStr] = newVal;
+  } else {
+    if (!MANUAL[dateStr]) MANUAL[dateStr] = {};
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const wd = effectiveWeekday(y, m, d);
+    let baseVal = '';
+    if (period === 100) baseVal = MORNING[wd] || '';
+    else if (period === 10) baseVal = (SCHEDULE[wd] || {})[9] || '';
+    else baseVal = (SCHEDULE[wd] || {})[period] || '';
+
+    if (newVal === baseVal) {
+      delete MANUAL[dateStr][period];
+      if (Object.keys(MANUAL[dateStr]).length === 0) delete MANUAL[dateStr];
+    } else {
+      MANUAL[dateStr][period] = newVal;
+    }
+  }
+
+  saveData();
+  closePopup();
+  render();
+}
+
+/* ===================== 11. 导出 CSV ===================== */
+function exportCSV() {
+  const days = getDateRange();
+  if (days.length === 0) { alert('没有可导出的日期'); return; }
+  const rows = [];
+  const header1 = ['时段', '节次'];
+  const header2 = ['', ''];
+  for (const { m, d } of days) {
+    header1.push(`${m}月${d}日`);
+    header2.push(isHoliday(days[0].y, m, d) ? '假' : ['', '周一','周二','周三','周四','周五','周六','周日'][effectiveWeekday(days[0].y, m, d)]);
+  }
+  rows.push(header1.join(','));
+  rows.push(header2.join(','));
+  PERIODS.forEach((p, idx) => {
+    const isFirstOfGroup = idx === 0 || PERIODS[idx - 1].group !== p.group;
+    const row = [isFirstOfGroup ? p.group : '', p.name];
+    for (const { y, m, d } of days) row.push(getClass(y, m, d, p.key));
+    rows.push(row.join(','));
+  });
+  const sumRow = ['合计', '节数'];
+  for (const { y, m, d } of days) {
+    let count = 0;
+    if (!isHoliday(y, m, d)) PERIODS.forEach(p => { if (getClass(y, m, d, p.key)) count++; });
+    sumRow.push(isHoliday(y, m, d) ? '' : count);
+  }
+  rows.push(sumRow.join(','));
+  const noteRow = ['备注', ''];
+  for (const { y, m, d } of days) noteRow.push(getNote(y, m, d));
+  rows.push(noteRow.join(','));
+
+  const { byType, byClass, classDays, grandTotal } = computeSummary(days);
+
+  rows.push('');
+  rows.push('课时费汇总（按时段）');
+  rows.push('时段,节数,单价,小计');
+  rows.push(`早读,${byType.morning.count},${byType.morning.price},${byType.morning.subtotal}`);
+  rows.push(`正课,${byType.regular.count},${byType.regular.price},${byType.regular.subtotal}`);
+  rows.push(`晚自习,${byType.evening.count},${byType.evening.price},${byType.evening.subtotal}`);
+  rows.push(`合计,${byType.morning.count + byType.regular.count + byType.evening.count},,${grandTotal}`);
+  rows.push(`有课天数,${classDays}天`);
+
+  rows.push('');
+  rows.push('课时费汇总（按班级）');
+  rows.push('班级,早读,正课,晚自习,合计节数');
+  const classNames = Object.keys(byClass).sort((a, b) => {
+    const na = parseInt(a, 10), nb = parseInt(b, 10);
+    return (!isNaN(na) && !isNaN(nb)) ? na - nb : a.localeCompare(b);
+  });
+  let tM = 0, tR = 0, tE = 0, tT = 0;
+  classNames.forEach(cls => {
+    const c = byClass[cls];
+    tM += c.morning; tR += c.regular; tE += c.evening; tT += c.total;
+    rows.push(`${cls} 班,${c.morning},${c.regular},${c.evening},${c.total}`);
+  });
+  rows.push(`合计,${tM},${tR},${tE},${tT}`);
+
+  const csv = '\uFEFF' + rows.join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const s = days[0], e = days[days.length - 1];
+  a.download = `课时总表_${s.y}${pad(s.m)}${pad(s.d)}-${e.y}${pad(e.m)}${pad(e.d)}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/* ===================== 12. 导出/导入 JSON ===================== */
+function exportJSON() {
+  const data = { morning: MORNING, schedule: SCHEDULE, special: SPECIAL, manual: MANUAL, manualNote: MANUAL_NOTE };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `课时表数据_${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function importJSON(file) {
+  const reader = new FileReader();
+  reader.onload = function (e) {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (data.morning) MORNING = data.morning;
+      if (data.schedule) SCHEDULE = data.schedule;
+      if (data.special) SPECIAL = data.special;
+      if (data.manual) MANUAL = data.manual;
+      if (data.manualNote) MANUAL_NOTE = data.manualNote;
+      saveData();
+      render();
+      alert('导入成功！');
+    } catch (err) {
+      alert('导入失败：文件格式不正确');
+      console.warn(err);
+    }
+  };
+  reader.readAsText(file);
+}
+
+/* ===================== 13. 重置范围内调课 ===================== */
+function resetRange() {
+  const days = getDateRange();
+  if (days.length === 0) { alert('没有可重置的日期'); return; }
+  const keys = days.map(({ y, m, d }) => dateKey(y, m, d));
+  const hitM = keys.filter(k => k in MANUAL);
+  const hitN = keys.filter(k => k in MANUAL_NOTE);
+  if (hitM.length === 0 && hitN.length === 0) {
+    alert('范围内没有手动调课或备注记录。');
+    return;
+  }
+  if (!confirm(`确定要清除范围内的 ${hitM.length} 天调课和 ${hitN.length} 条备注吗？`)) return;
+  hitM.forEach(k => delete MANUAL[k]);
+  hitN.forEach(k => delete MANUAL_NOTE[k]);
+  saveData();
+  render();
+}
+
+/* ===================== 14. 初始化 ===================== */
+let rangeStart, rangeEnd;
+
+function setRangeToMonth(y, m) {
+  const daysInMonth = new Date(y, m, 0).getDate();
+  rangeStart.value = `${y}-${pad(m)}-01`;
+  rangeEnd.value = `${y}-${pad(m)}-${pad(daysInMonth)}`;
+}
+
+function refresh() { render(); }
+
+(function init() {
+  detectStorage();
+
+  const tip = document.getElementById('storageTip');
+  if (storageType === 'local') {
+    tip.textContent = '✅ 本地存储可用，调课记录会自动保存。';
+  } else if (storageType === 'session') {
+    tip.textContent = '⚠️ 本地存储不可用，已降级为会话存储（关闭标签页后会丢）。建议用「导出数据」备份。';
+  } else {
+    tip.textContent = '❌ 浏览器禁用了所有本地存储，调课记录刷新会丢。请用「导出数据」手动备份，或用「导入数据」恢复。';
+  }
+
+  loadData();
+
+  rangeStart = document.getElementById('rangeStart');
+  rangeEnd = document.getElementById('rangeEnd');
+  const monthJump = document.getElementById('monthJump');
+
+  [9, 10, 11, 12].forEach(m => {
+    const opt = document.createElement('option');
+    opt.value = m; opt.textContent = `2026年${m}月`;
+    if (m === 9) opt.selected = true;
+    monthJump.appendChild(opt);
+  });
+
+  setRangeToMonth(2026, 9);
+
+  monthJump.addEventListener('change', () => {
+    setRangeToMonth(2026, +monthJump.value);
+    render();
+  });
+  rangeStart.addEventListener('change', render);
+  rangeEnd.addEventListener('change', render);
+
+  document.getElementById('rangeReset').addEventListener('click', () => {
+    setRangeToMonth(2026, +monthJump.value);
+    render();
+  });
+
+  document.getElementById('exportBtn').addEventListener('click', exportCSV);
+  document.getElementById('resetBtn').addEventListener('click', resetRange);
+  document.getElementById('saveJsonBtn').addEventListener('click', exportJSON);
+  document.getElementById('loadJsonBtn').addEventListener('click', () => {
+    document.getElementById('loadJsonFile').click();
+  });
+  document.getElementById('loadJsonFile').addEventListener('change', function (e) {
+    if (e.target.files[0]) importJSON(e.target.files[0]);
+    e.target.value = '';
+  });
+
+  document.getElementById('popupOk').onclick = function (e) {
+    e.preventDefault(); e.stopPropagation();
+    confirmEdit();
+  };
+  document.getElementById('popupCancel').onclick = function (e) {
+    e.preventDefault(); e.stopPropagation();
+    closePopup();
+  };
+  popupInput.onkeydown = function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); confirmEdit(); }
+    if (e.key === 'Escape') closePopup();
+  };
+  document.addEventListener('click', function (e) {
+    if (!popupEl.classList.contains('show')) return;
+    if (popupEl.contains(e.target)) return;
+    closePopup();
+  });
+  window.addEventListener('resize', () => { if (editingCell) positionPopup(editingCell); });
+
+  /* ===== 日期框：点任意位置都能弹日历 ===== */
+  [rangeStart, rangeEnd].forEach(el => {
+    el.addEventListener('click', () => {
+      if (typeof el.showPicker === 'function') {
+        try { el.showPicker(); } catch (err) {}
+      }
+    });
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && typeof el.showPicker === 'function') {
+        try { el.showPicker(); } catch (err) {}
+      }
+    });
+  });
+
+  render();
+
+  let lastRenderedDate = new Date().toDateString();
+  setInterval(() => {
+    const nowDate = new Date().toDateString();
+    if (nowDate !== lastRenderedDate) {
+      lastRenderedDate = nowDate;
+      render();
+    }
+  }, 60 * 1000);
+
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      const nowDate = new Date().toDateString();
+      if (nowDate !== lastRenderedDate) {
+        lastRenderedDate = nowDate;
+        render();
+      }
+    }
+  });
+})();
+</script>
+</body>
+</html>
